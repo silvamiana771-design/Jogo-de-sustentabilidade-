@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caça-Palavras da Sustentabilidade</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #e0f2f1;
+    color: #164e63;
+    overflow-x: hidden;
+}
+.grid-container {
+    display: grid;
+    grid-template-columns: repeat(15, 1fr);
+    grid-template-rows: repeat(15, 1fr);
+    aspect-ratio: 1/1;
+    max-width: 450px;
+    width: 95vw;
+    margin: 0 auto;
+    user-select: none;
+    touch-action: none;
+}
+.grid-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(0.6rem, 2.5vw, 1.2rem);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.1s;
+}
+.cell-highlight {
+    background-color: #6ee7b7;
+}
+.cell-found {
+    background-color: #34d399 !important;
+    color: white;
+    animation: pulse-found 0.5s;
+}
+.word-list li {
+    cursor: default;
+    transition: color 0.3s, text-decoration 0.3s;
+}
+.word-found {
+    text-decoration: line-through;
+    color: #9ca3af;
+    font-weight: 400;
+}
+.level-button {
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+.level-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+.level-button.active {
+    background-color: #0d9488;
+    color: white;
+    box-shadow: 0 4px 14px rgba(13,148,136,0.6);
+}
+@keyframes pulse-found {
+    0% {transform: scale(1);}
+    50% {transform: scale(1.1);}
+    100% {transform: scale(1);}
+}
+</style>
+</head>
+<body class="p-4">
+<div id="app" class="max-w-4xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-2xl">
+<h1 class="text-3xl md:text-4xl font-extrabold text-teal-700 mb-2 text-center">🌿 Caça-Palavras da Sustentabilidade</h1>
+<p class="text-center text-teal-600 mb-6">Encontre palavras essenciais para um futuro mais verde!</p>
+
+<!-- Níveis -->
+<div class="flex justify-center space-x-4 mb-4 p-2 bg-gray-50 rounded-lg shadow-inner">
+    <button id="btnEasy" data-level="easy" class="level-button px-4 py-2 rounded-full font-bold bg-teal-100 text-teal-800 hover:bg-teal-200">Fácil</button>
+    <button id="btnMedium" data-level="medium" class="level-button px-4 py-2 rounded-full font-bold bg-teal-100 text-teal-800 hover:bg-teal-200">Médio</button>
+    <button id="btnHard" data-level="hard" class="level-button px-4 py-2 rounded-full font-bold bg-teal-100 text-teal-800 hover:bg-teal-200">Difícil</button>
+</div>
+
+<!-- Cronômetro e pontuação -->
+<div class="flex justify-between mb-4 p-2 bg-teal-50 rounded-lg shadow-inner">
+    <div class="text-lg font-bold text-teal-700">⏱ Tempo: <span id="timer">0</span> s</div>
+    <div class="text-lg font-bold text-teal-700">⭐ Pontos: <span id="score">0</span></div>
+</div>
+
+<div class="flex flex-col lg:flex-row lg:space-x-8">
+    <div class="lg:w-3/5">
+        <div id="wordGrid" class="grid-container border border-teal-500 rounded-lg overflow-hidden shadow-lg bg-teal-50"></div>
+    </div>
+
+    <div class="lg:w-2/5 mt-6 lg:mt-0 p-4 bg-teal-50 rounded-lg shadow-inner">
+        <h2 class="text-2xl font-bold text-teal-700 mb-4">Palavras a Encontrar:</h2>
+        <ul id="wordList" class="word-list grid grid-cols-2 gap-2 text-lg font-medium"></ul>
+        <div class="mt-4 text-sm text-gray-500">
+            <p class="font-bold">Direções Permitidas:</p>
+            <p id="directionsInfo" class="text-gray-600 italic"></p>
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+// Configuração
+const GRID_SIZE = 15;
+let timerInterval = null;
+let timeElapsed = 0;
+let score = 0;
+
+const wordsConfig = {
+    easy: {
+        words: ['RECICLAR','ÁGUA','LIXO','REUSO','ECONOMIA','PLANTAR','VERDE','TERRA','SOL','CUIDADO'],
+        directions: [[0,1],[1,0]],
+        directionsInfo: 'Horizontal e Vertical',
+        grid: [],
+        found: []
+    },
+    medium: {
+        words: ['ENERGIA','ECOSSISTEMA','BIOMASSA','PRESERVAÇÃO','CONSUMO','REDUÇÃO','FLORESTA','COLETIVA','NATURAL','SAÚDE'],
+        directions: [[0,1],[1,0],[1,1],[1,-1]],
+        directionsInfo: 'Horizontal, Vertical e Diagonal',
+        grid: [],
+        found: []
+    },
+    hard: {
+        words: ['SUSTENTÁVEL','BIODIVERSIDADE','POLUIÇÃO','DESENVOLVIMENTO','COMUNIDADE','LOGÍSTICA','REVERSA','RENOVÁVEL','ODS','CLIMÁTICO'],
+        directions: [[0,1],[1,0],[1,1],[0,-1],[-1,0],[-1,-1],[-1,1],[1,-1]],
+        directionsInfo: 'Todas as direções, incluindo reverso',
+        grid: [],
+        found: []
+    }
+};
+
+let activeLevel = 'easy';
+let currentLevelData = wordsConfig[activeLevel];
+let isDrawing = false;
+let startCell = null;
+let endCell = null;
+
+// Letras aleatórias
+function getRandomLetter(){const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ';return alphabet.charAt(Math.floor(Math.random()*alphabet.length));}
+
+// Criar grid
+function generateGrid(levelData){
+    const grid = Array(GRID_SIZE).fill(0).map(()=>Array(GRID_SIZE).fill(''));
+    const wordsToPlace = [...levelData.words].sort((a,b)=>b.length-a.length);
+
+    for(const word of wordsToPlace){
+        let placed=false;
+        let attempts=0;
+        const maxAttempts=GRID_SIZE*GRID_SIZE*levelData.directions.length*2;
+        while(!placed&&attempts<maxAttempts){
+            attempts++;
+            const r=Math.floor(Math.random()*GRID_SIZE);
+            const c=Math.floor(Math.random()*GRID_SIZE);
+            const [dr,dc]=levelData.directions[Math.floor(Math.random()*levelData.directions.length)];
+            if(canPlaceWord(grid,word,r,c,dr,dc)){placeWord(grid,word,r,c,dr,dc);placed=true;}
+        }
+    }
+    // Preenche vazios
+    for(let r=0;r<GRID_SIZE;r++){for(let c=0;c<GRID_SIZE;c++){if(grid[r][c]===''){grid[r][c]=getRandomLetter();}}}
+    return grid;
+}
+
+function canPlaceWord(grid,word,r,c,dr,dc){
+    const len=word.length;
+    if(r+len*dr<0||r+len*dr>GRID_SIZE||c+len*dc<0||c+len*dc>GRID_SIZE){return false;}
+    for(let i=0;i<len;i++){
+        const nextR=r+i*dr;const nextC=c+i*dc;
+        if(grid[nextR][nextC]!==''&&grid[nextR][nextC]!==word[i]){return false;}
+    }
+    return true;
+}
+function placeWord(grid,word,r,c,dr,dc){for(let i=0;i<word.length;i++){grid[r+i*dr][c+i*dc]=word[i];}}
+
+function renderGrid(grid){
+    const gridDiv=document.getElementById('wordGrid');
+    gridDiv.innerHTML='';
+    for(let r=0;r<GRID_SIZE;r++){
+        for(let c=0;c<GRID_SIZE;c++){
+            const cell=document.createElement('div');
+            cell.className='grid-cell border border-gray-200';
+            cell.dataset.row=r;
+            cell.dataset.col=c;
+            cell.textContent=grid[r][c];
+            if(currentLevelData.found.includes(`${r}-${c}`)){cell.classList.add('cell-found');}
+            gridDiv.appendChild(cell);
+        }
+    }
+}
+
+function renderWordList(levelData){
+    const wordListDiv=document.getElementById('wordList');
+    wordListDiv.innerHTML='';
+    levelData.words.forEach(word=>{
+        const li=document.createElement('li');
+        li.textContent=word;
+        li.dataset.word=word;
+        li.className='py-1 px-2 rounded-md transition-all duration-300';
+        wordListDiv.appendChild(li);
+    });
+    document.getElementById('directionsInfo').textContent=levelData.directionsInfo;
+}
+
+// Seleção
+function getCell(r,c){return document.querySelector(`[data-row="${r}"][data-col="${c}"]`);}
+function clearHighlights(){document.querySelectorAll('.grid-cell').forEach(cell=>{if(!cell.classList.contains('cell-found'))cell.classList.remove('cell-highlight');});}
+function highlightCells(r1,c1,r2,c2){
+    clearHighlights();
+    const dr=Math.sign(r2-r1);const dc=Math.sign(c2-c1);
+    if(Math.abs(r2-r1)!==Math.abs(c2-c1)&&r1!==r2&&c1!==c2){return;}
+    let r=r1;let c=c1;
+    while(true){
+        const cell=getCell(r,c);if(cell&&!cell.classList.contains('cell-found'))cell.classList.add('cell-highlight');
+        if(r===r2&&c===c2)break;if(r!==r2)r+=dr;if(c!==c2)c+=dc;
+    }
+}
+function getSelectedWord(r1,c1,r2,c2){
+    const dr=Math.sign(r2-r1);const dc=Math.sign(c2-c1);let word='';
+    if(Math.abs(r2-r1)!==Math.abs(c2-c1)&&r1!==r2&&c1!==c2){return null;}
+    let r=r1;let c=c1;
+    while(true){
+        const cell=getCell(r,c);if(!cell)return null;word+=cell.textContent;if(r===r2&&c===c2)break;if(r!==r2)r+=dr;if(c!==c2)c+=dc;
+    }
+    return word;
+}
+function checkWord(selectedWord){
+    const levelWords=currentLevelData.words.map(w=>w.toUpperCase());
+    const normalized=selectedWord.toUpperCase();
+    if(levelWords.includes(normalized))return normalized;
+    const reversed=normalized.split('').reverse().join('');
+    if(levelWords.includes(reversed))return reversed;
+    return null;
+}
+function markCellsAsFound(r1,c1,r2,c2){
+    const dr=Math.sign(r2-r1);const dc=Math.sign(c2-c1);let r=r1;let c=c1;
+    while(true){
+        const cell=getCell(r,c);cell.classList.remove('cell-highlight');cell.classList.add('cell-found');currentLevelData.found.push(`${r}-${c}`);
+        if(r===r2&&c===c2)break;if(r!==r2)r+=dr;if(c!==c2)c+=dc;
+    }
+    score+=10;document.getElementById('score').textContent=score;
+}
+
+// Eventos
+function handleMouseDown(e){
+    const target=(e.touches?e.touches[0].target:e.target).closest('.grid-cell');
+    if(!target)return;isDrawing=true;startCell={r:parseInt(target.dataset.row),c:parseInt(target.dataset.col)};endCell=startCell;highlightCells(startCell.r,startCell.c,endCell.r,endCell.c);e.preventDefault();
+}
+function handleMouseMove(e){
+    if(!isDrawing)return;
+    const target=(e.touches?e.touches[0].target:e.target).closest('.grid-cell');
+    if(!target)return;
+    const newEnd={r:parseInt(target.dataset.row),c:parseInt(target.dataset.col)};
+    if(newEnd.r!==endCell.r||newEnd.c!==endCell.c){endCell=newEnd;highlightCells(startCell.r,startCell.c,endCell.r,endCell.c);}
+}
+function handleMouseUp(e){
+    if(!isDrawing)return;isDrawing=false;
+    const target=(e.changedTouches?e.changedTouches[0].target:e.target).closest('.grid-cell');
+    if(!target){clearHighlights();return;}
+    const r1=startCell.r,c1=startCell.c,r2=endCell.r,c2=endCell.c;
+    const selectedWord=getSelectedWord(r1,c1,r2,c2);
+    if(!selectedWord){clearHighlights();return;}
+    const foundWord=checkWord(selectedWord);
+    if(foundWord){
+        markCellsAsFound(r1,c1,r2,c2);
+        const li=document.querySelector(`[data-word="${foundWord}"]`);
+        if(li)li.classList.add('word-found');
+        if(document.querySelectorAll('.word-found').length===currentLevelData.words.length){
+            alert(`🎉 Parabéns! Você completou o nível ${activeLevel.toUpperCase()}! Tempo: ${timeElapsed}s, Pontos: ${score}`);
+        }
+    }else{clearHighlights();}
+    startCell=null;endCell=null;
+}
+
+// Troca de nível
+function handleLevelChange(level){
+    activeLevel=level;currentLevelData=wordsConfig[level];score=0;timeElapsed=0;document.getElementById('score').textContent=score;document.getElementById('timer').textContent=timeElapsed;
+    document.querySelectorAll('.level-button').forEach(btn=>btn.classList.remove('active'));
+    document.getElementById(`btn${level.charAt(0).toUpperCase()+level.slice(1)}`).classList.add('active');
+    if(currentLevelData.grid.length===0)currentLevelData.grid=generateGrid(currentLevelData);
+    renderGrid(currentLevelData.grid);renderWordList(currentLevelData);
+    if(timerInterval)clearInterval(timerInterval);
+    timerInterval=setInterval(()=>{timeElapsed++;document.getElementById('timer').textContent=timeElapsed;},1000);
+}
+
+// Inicialização
+function initGame(){
+    const gridContainer=document.getElementById('wordGrid');
+    gridContainer.addEventListener('mousedown',handleMouseDown);
+    gridContainer.addEventListener('mousemove',handleMouseMove);
+    document.addEventListener('mouseup',handleMouseUp);
+    gridContainer.addEventListener('touchstart',handleMouseDown);
+    gridContainer.addEventListener('touchmove',handleMouseMove);
+    document.addEventListener('touchend',handleMouseUp);
+    document.getElementById('btnEasy').addEventListener('click',()=>handleLevelChange('easy'));
+    document.getElementById('btnMedium').addEventListener('click',()=>handleLevelChange('medium'));
+    document.getElementById('btnHard').addEventListener('click',()=>handleLevelChange('hard'));
+    handleLevelChange('easy');
+}
+window.onload=initGame;
+</script>
+</body>
+  </html>
